@@ -16,14 +16,14 @@ on:
       - '.github/workflows/auto-sync.yml'
 
 env:
-  GITHUB_ORG: "Aether-browser"
+  GITHUB_ORG: "AetherBrowser"
   JOSH_VERSION: "latest"
 
 jobs:
   sync-repos:
     runs-on: ubuntu-latest
     
-    if: github.repository != 'EpitechPGE3-2025/G-EIP-600-MLH-6-1-eip-2'
+    if: github.repository != vars.DEST_REPO
     
     services:
       josh:
@@ -195,14 +195,14 @@ jobs:
       - name: Push to destination
         env:
           PAT: ${{ secrets.EPITECH_SYNC_TOKEN }}
-          DEST_REPO: ${{ secrets.DESTINATION_REPO }}
+          DEST_REPO: https://github.com/${{ vars.DEST_REPO }}
         run: |
           echo "════════════════════════════════════════════════════════════"
           echo "Pushing to destination repository"
           echo "════════════════════════════════════════════════════════════"
 
           # Create destination URL with authentication
-          destination_url=$(echo "$DEST_REPO" | sed "s|https://github.com|https://${PAT}@github.com|")
+          destination_url="https://${PAT}@github.com/${{ vars.DEST_REPO }}.git"
 
           # Configure destination remote
           git remote add destination "$destination_url" 2>/dev/null || \
