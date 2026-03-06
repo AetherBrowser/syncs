@@ -98,7 +98,6 @@ jobs:
           declare -A REPOS=(
               ["aether-browser.org"]="Web/aether-browser.org"
               ["installer"]="Installer/Installer"
-              ["aether"]="App/Aether"
           )
 
           # Function to sync a repository using Josh
@@ -259,7 +258,6 @@ jobs:
           echo "|--------------------|------------------------|" >> $GITHUB_STEP_SUMMARY
           echo "| aether-browser.org | Web/aether-browser.org |" >> $GITHUB_STEP_SUMMARY
           echo "| installer          | Installer/Installer    |" >> $GITHUB_STEP_SUMMARY
-          echo "| aether             | App/Aether             |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### How it works:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
