@@ -45,28 +45,25 @@ jobs:
         run: |
           set -e
 
-          # Config Git user
           git config user.name "Aether Bot"
           git config user.email "bot@aetherbrowser.org"
 
-          # Préparation dossier GPG (évite conflits)
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
           echo "use-agent" >> ~/.gnupg/gpg.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
 
-          # Import clé privée GPG (depuis secret GitHub)
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
 
-          # Récupération ID clé GPG (la dernière importée)
           GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format=long | grep sec | head -n1 | awk '{print $2}' | cut -d'/' -f2)
           echo "Using GPG key ID: $GPG_KEY_ID"
 
-          # Config Git pour signature automatique
           git config user.signingkey "$GPG_KEY_ID"
           git config commit.gpgsign true
 
-          # Configure git credential helper
+          # Important: for git to use gpg with loopback pinentry
+          git config gpg.program "gpg --batch --yes --pinentry-mode loopback"
+
           git config --global credential.helper store
           echo "https://${{ secrets.EPITECH_SYNC_TOKEN }}@github.com" > ~/.git-credentials
 
