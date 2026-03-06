@@ -53,16 +53,18 @@ jobs:
           echo "use-agent" >> ~/.gnupg/gpg.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
 
+          # Import clé privée GPG (doit être sans passphrase)
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
 
+          # Récupération ID clé GPG
           GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format=long | grep sec | head -n1 | awk '{print $2}' | cut -d'/' -f2)
           echo "Using GPG key ID: $GPG_KEY_ID"
 
           git config user.signingkey "$GPG_KEY_ID"
           git config commit.gpgsign true
 
-          # Important: for git to use gpg with loopback pinentry
-          git config gpg.program "gpg --batch --yes --pinentry-mode loopback"
+          # Ne PAS mettre d'options dans gpg.program
+          # git config gpg.program "gpg --batch --yes --pinentry-mode loopback"  # ❌ supprime cette ligne
 
           git config --global credential.helper store
           echo "https://${{ secrets.EPITECH_SYNC_TOKEN }}@github.com" > ~/.git-credentials
