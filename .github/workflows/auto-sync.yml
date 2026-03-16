@@ -240,7 +240,7 @@ jobs:
               git push destination "$current_branch" --force
             fi
           fi
-
+          
       - name: Copy GitHub Project
         env:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
@@ -248,6 +248,7 @@ jobs:
           gh project copy 3 \
             --source-owner AetherBrowser \
             --target-owner EpitechPGE3-2025 \
+            --target-repo G-EIP-600-MLH-6-1-eip-2 \
             --title "Synced Aether Project"
 
       - name: Create summary
