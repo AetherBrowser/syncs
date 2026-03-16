@@ -247,7 +247,8 @@ jobs:
         run: |
           gh project copy 3 \
             --source-owner AetherBrowser \
-            --target-owner EpitechPGE3-2025
+            --target-owner EpitechPGE3-2025 \
+            --title "Synced Aether Project"
 
       - name: Create summary
         if: always()
