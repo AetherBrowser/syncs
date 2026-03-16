@@ -255,7 +255,7 @@ jobs:
           sudo apt-get install gh -y
       
           echo "Authenticating..."
-          echo "$GH_TOKEN" | gh auth login --with-token
+          gh auth status
       
           echo "Fetching source project ID..."
       
