@@ -241,106 +241,13 @@ jobs:
             fi
           fi
 
-      - name: Sync GitHub Project
+      - name: Copy GitHub Project
         env:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
-          SOURCE_ORG: AetherBrowser
-          DEST_ORG: EpitechPGE3-2025
-          PROJECT_NUMBER: 3
         run: |
-          set -e
-      
-          echo "Checking GitHub CLI authentication..."
-          gh auth status
-      
-          echo "Fetching source project ID..."
-      
-          PROJECT_ID=$(gh api graphql -f query='
-          query($org:String!, $number:Int!){
-            organization(login:$org){
-              projectV2(number:$number){
-                id
-              }
-            }
-          }' -f org=$SOURCE_ORG -F number=$PROJECT_NUMBER --jq '.data.organization.projectV2.id')
-      
-          echo "Source Project ID: $PROJECT_ID"
-      
-          echo "Fetching project items..."
-      
-          gh api graphql -f query='
-          query($id:ID!){
-            node(id:$id){
-              ... on ProjectV2{
-                items(first:100){
-                  nodes{
-                    content{
-                      ... on Issue{
-                        id
-                        number
-                        title
-                        repository{
-                          name
-                          owner{
-                            login
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }' -f id=$PROJECT_ID > items.json
-      
-          echo "Fetching destination organization ID..."
-      
-          DEST_ORG_ID=$(gh api graphql -f query='
-          query($org:String!){
-            organization(login:$org){
-              id
-            }
-          }' -f org=$DEST_ORG --jq '.data.organization.id')
-      
-          echo "Destination Org ID: $DEST_ORG_ID"
-      
-          echo "Creating project in destination organization..."
-      
-          DEST_PROJECT_ID=$(gh api graphql -f query='
-          mutation($owner:ID!){
-            createProjectV2(input:{
-              ownerId:$owner,
-              title:"Synced Aether Project"
-            }){
-              projectV2{
-                id
-              }
-            }
-          }' -f owner=$DEST_ORG_ID --jq '.data.createProjectV2.projectV2.id')
-      
-          echo "Destination Project ID: $DEST_PROJECT_ID"
-      
-          echo "Adding issues to destination project..."
-      
-          jq -c '.data.node.items.nodes[]' items.json | while read item; do
-            ISSUE_ID=$(echo "$item" | jq -r '.content.id')
-      
-            if [ "$ISSUE_ID" != "null" ]; then
-              gh api graphql -f query='
-              mutation($project:ID!, $content:ID!){
-                addProjectV2ItemById(input:{
-                  projectId:$project
-                  contentId:$content
-                }){
-                  item{
-                    id
-                  }
-                }
-              }' -f project=$DEST_PROJECT_ID -f content=$ISSUE_ID
-            fi
-          done
-      
-          echo "GitHub Project sync completed successfully"
+          gh project copy 3 \
+            --source-owner AetherBrowser \
+            --target-owner EpitechPGE3-2025
 
       - name: Create summary
         if: always()
