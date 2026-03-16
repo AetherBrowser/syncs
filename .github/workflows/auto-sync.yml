@@ -246,15 +246,11 @@ jobs:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
           SOURCE_ORG: AetherBrowser
           DEST_ORG: EpitechPGE3-2025
-          PROJECT_NUMBER: 3
+          PROJECT_NUMBER: 28
         run: |
           set -e
       
-          echo "Installing GitHub CLI..."
-          sudo apt-get update -y
-          sudo apt-get install gh -y
-      
-          echo "Authenticating..."
+          echo "Checking GitHub CLI authentication..."
           gh auth status
       
           echo "Fetching source project ID..."
@@ -268,7 +264,7 @@ jobs:
             }
           }' -f org=$SOURCE_ORG -F number=$PROJECT_NUMBER --jq '.data.organization.projectV2.id')
       
-          echo "Project ID: $PROJECT_ID"
+          echo "Source Project ID: $PROJECT_ID"
       
           echo "Fetching project items..."
       
@@ -280,10 +276,14 @@ jobs:
                   nodes{
                     content{
                       ... on Issue{
+                        id
                         number
                         title
                         repository{
                           name
+                          owner{
+                            login
+                          }
                         }
                       }
                     }
@@ -293,41 +293,54 @@ jobs:
             }
           }' -f id=$PROJECT_ID > items.json
       
-          echo "Creating project in destination org..."
+          echo "Fetching destination organization ID..."
+      
+          DEST_ORG_ID=$(gh api graphql -f query='
+          query($org:String!){
+            organization(login:$org){
+              id
+            }
+          }' -f org=$DEST_ORG --jq '.data.organization.id')
+      
+          echo "Destination Org ID: $DEST_ORG_ID"
+      
+          echo "Creating project in destination organization..."
       
           DEST_PROJECT_ID=$(gh api graphql -f query='
-          mutation($org:String!){
+          mutation($owner:ID!){
             createProjectV2(input:{
-              ownerId: (organization(login:$org){id})
-              title: "Synced Project"
+              ownerId:$owner,
+              title:"Synced Aether Project"
             }){
               projectV2{
                 id
               }
             }
-          }' -f org=$DEST_ORG --jq '.data.createProjectV2.projectV2.id')
+          }' -f owner=$DEST_ORG_ID --jq '.data.createProjectV2.projectV2.id')
       
-          echo "Destination project ID: $DEST_PROJECT_ID"
+          echo "Destination Project ID: $DEST_PROJECT_ID"
       
-          echo "Relinking issues..."
+          echo "Adding issues to destination project..."
       
           jq -c '.data.node.items.nodes[]' items.json | while read item; do
-            ISSUE_NUMBER=$(echo "$item" | jq '.content.number')
+            ISSUE_ID=$(echo "$item" | jq -r '.content.id')
       
-            gh api graphql -f query='
-            mutation($project:ID!, $content:ID!){
-              addProjectV2ItemById(input:{
-                projectId:$project
-                contentId:$content
-              }){
-                item{
-                  id
+            if [ "$ISSUE_ID" != "null" ]; then
+              gh api graphql -f query='
+              mutation($project:ID!, $content:ID!){
+                addProjectV2ItemById(input:{
+                  projectId:$project
+                  contentId:$content
+                }){
+                  item{
+                    id
+                  }
                 }
-              }
-            }'
+              }' -f project=$DEST_PROJECT_ID -f content=$ISSUE_ID
+            fi
           done
       
-          echo "Project sync complete"
+          echo "GitHub Project sync completed successfully"
 
       - name: Create summary
         if: always()
