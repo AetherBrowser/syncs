@@ -478,6 +478,39 @@ jobs:
           echo "🎉 Project sync complete!"
           echo ""
           echo "📍 View project at: https://github.com/orgs/$DEST_ORG/projects"
+          
+          # Link project to destination repository
+          echo ""
+          echo "🔗 Linking project to repository..."
+          
+          # Get repository ID
+          REPO_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                id
+              }
+            }
+          ' -f owner="$DEST_ORG" -f name="${DEST_REPO##*/}" --jq '.data.repository.id')
+          
+          if [ -n "$REPO_ID" ]; then
+            # Link the project to the repository
+            gh api graphql -f query='
+              mutation($projectId: ID!, $repositoryId: ID!) {
+                linkProjectV2ToRepository(input: {
+                  projectId: $projectId,
+                  repositoryId: $repositoryId
+                }) {
+                  repository {
+                    id
+                  }
+                }
+              }
+            ' -f projectId="$DEST_PROJECT_ID" -f repositoryId="$REPO_ID" > /dev/null 2>&1 && \
+              echo "✅ Project linked to repository: https://github.com/$DEST_REPO/projects" || \
+              echo "⚠️  Failed to link project to repository (it may already be linked)"
+          else
+            echo "⚠️  Could not get repository ID for $DEST_REPO"
+          fi
 
       - name: Create summary
         if: always()
