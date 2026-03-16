@@ -246,7 +246,7 @@ jobs:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
           SOURCE_ORG: AetherBrowser
           DEST_ORG: EpitechPGE3-2025
-          PROJECT_NUMBER: 28
+          PROJECT_NUMBER: 3
         run: |
           set -e
       
