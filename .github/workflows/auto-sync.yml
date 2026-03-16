@@ -241,6 +241,94 @@ jobs:
             fi
           fi
 
+      - name: Sync GitHub Project
+        env:
+          GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
+          SOURCE_ORG: AetherBrowser
+          DEST_ORG: EpitechPGE3-2025
+          PROJECT_NUMBER: 1
+        run: |
+          set -e
+      
+          echo "Installing GitHub CLI..."
+          sudo apt-get update -y
+          sudo apt-get install gh -y
+      
+          echo "Authenticating..."
+          echo "$GH_TOKEN" | gh auth login --with-token
+      
+          echo "Fetching source project ID..."
+      
+          PROJECT_ID=$(gh api graphql -f query='
+          query($org:String!, $number:Int!){
+            organization(login:$org){
+              projectV2(number:$number){
+                id
+              }
+            }
+          }' -f org=$SOURCE_ORG -F number=$PROJECT_NUMBER --jq '.data.organization.projectV2.id')
+      
+          echo "Project ID: $PROJECT_ID"
+      
+          echo "Fetching project items..."
+      
+          gh api graphql -f query='
+          query($id:ID!){
+            node(id:$id){
+              ... on ProjectV2{
+                items(first:100){
+                  nodes{
+                    content{
+                      ... on Issue{
+                        number
+                        title
+                        repository{
+                          name
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }' -f id=$PROJECT_ID > items.json
+      
+          echo "Creating project in destination org..."
+      
+          DEST_PROJECT_ID=$(gh api graphql -f query='
+          mutation($org:String!){
+            createProjectV2(input:{
+              ownerId: (organization(login:$org){id})
+              title: "Synced Project"
+            }){
+              projectV2{
+                id
+              }
+            }
+          }' -f org=$DEST_ORG --jq '.data.createProjectV2.projectV2.id')
+      
+          echo "Destination project ID: $DEST_PROJECT_ID"
+      
+          echo "Relinking issues..."
+      
+          jq -c '.data.node.items.nodes[]' items.json | while read item; do
+            ISSUE_NUMBER=$(echo "$item" | jq '.content.number')
+      
+            gh api graphql -f query='
+            mutation($project:ID!, $content:ID!){
+              addProjectV2ItemById(input:{
+                projectId:$project
+                contentId:$content
+              }){
+                item{
+                  id
+                }
+              }
+            }'
+          done
+      
+          echo "Project sync complete"
+
       - name: Create summary
         if: always()
         run: |
