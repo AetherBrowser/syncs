@@ -498,12 +498,14 @@ jobs:
             # Check whether issue already exists
             # ----------------------------------------------------------
 
-            DEST_NUMBER=$(echo "$EXISTING_ISSUES" \
-              | jq -r --arg marker "$MARKER" '
-                .[]
-                | select((.body // "") | contains($marker))
-                | .number
-              ' | head -n1)
+            ISSUE_URL=$(gh issue create \
+              --repo "$DEST_REPO" \
+              --title "$TITLE" \
+              --body "$NEW_BODY")
+
+            DEST_NUMBER="${ISSUE_URL##*/}"
+
+            echo "✅ Created #$DEST_NUMBER"
 
             if [ -n "$DEST_NUMBER" ]; then
 
