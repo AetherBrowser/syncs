@@ -673,16 +673,13 @@ jobs:
             # Always initialize NEW_BODY with set -u enabled.
             # ----------------------------------------------------------
 
-            NEW_BODY=$(cat <<EOF
-$MARKER
+            NEW_BODY="${MARKER}
 
-**Source:** [$SOURCE_REPO#$SOURCE_NUMBER]($URL)
+            **Source:** [${SOURCE_REPO}#${SOURCE_NUMBER}](${URL})
 
----
+            ---
 
-$BODY
-EOF
-)
+            ${BODY}"
 
             # ----------------------------------------------------------
             # Find existing destination issue by marker
