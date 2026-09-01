@@ -240,74 +240,87 @@ jobs:
               git push destination "$current_branch" --force
             fi
           fi
-          
-      - name: Copy GitHub Project
+
+      - name: Sync GitHub Project
         env:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
           SOURCE_ORG: "AetherBrowser"
+          SOURCE_PROJECT_NUMBER: "4"
           DEST_ORG: "EpitechPGE3-2025"
           DEST_REPO: ${{ vars.DEST_REPO }}
         run: |
-          set -e
-          
+          set -euo pipefail
+
+          echo "======================================"
+          echo " GitHub Project synchronization"
+          echo "======================================"
+
+          DEST_REPO_NAME="${DEST_REPO##*/}"
+
+          # ------------------------------------------------------------
+          # 1. Get source project
+          # ------------------------------------------------------------
+
           echo "🔍 Fetching source project..."
-          
-          # Get source project number
-          SOURCE_PROJECT_NUMBER=4
-          
-          # Get source project details
+
           SOURCE_PROJECT=$(gh api graphql -f query='
             query($org: String!, $number: Int!) {
               organization(login: $org) {
                 projectV2(number: $number) {
                   id
                   title
-                  shortDescription
                   items(first: 100) {
                     nodes {
                       id
                       type
+
                       content {
                         ... on Issue {
+                          id
+                          number
                           title
                           body
                           url
-                          number
                           state
-                          labels(first: 10) {
+                          repository {
+                            nameWithOwner
+                          }
+                          parent {
+                            id
+                            number
+                            url
+                            repository {
+                              nameWithOwner
+                            }
+                          }
+                          labels(first: 20) {
                             nodes {
                               name
                             }
                           }
-                          repository {
-                            nameWithOwner
-                          }
                         }
+
                         ... on PullRequest {
+                          id
+                          number
                           title
                           body
                           url
-                          number
                           state
                           repository {
                             nameWithOwner
                           }
                         }
+
                         ... on DraftIssue {
+                          id
                           title
                           body
                         }
                       }
-                      fieldValues(first: 20) {
+
+                      fieldValues(first: 50) {
                         nodes {
-                          ... on ProjectV2ItemFieldTextValue {
-                            text
-                            field {
-                              ... on ProjectV2Field {
-                                name
-                              }
-                            }
-                          }
                           ... on ProjectV2ItemFieldSingleSelectValue {
                             name
                             field {
@@ -316,6 +329,15 @@ jobs:
                               }
                             }
                           }
+
+                          ... on ProjectV2ItemFieldTextValue {
+                            text
+                            field {
+                              ... on ProjectV2Field {
+                                name
+                              }
+                            }
+                          }
                         }
                       }
                     }
@@ -323,194 +345,344 @@ jobs:
                 }
               }
             }
-          ' -f org="$SOURCE_ORG" -F number=$SOURCE_PROJECT_NUMBER)
-          
-          if [ -z "$SOURCE_PROJECT" ] || echo "$SOURCE_PROJECT" | jq -e '.data.organization.projectV2 == null' > /dev/null; then
-            echo "❌ Failed to fetch source project #$SOURCE_PROJECT_NUMBER from $SOURCE_ORG"
-            echo "⚠️ Skipping project copy - please verify the project exists and is accessible"
-            exit 0
+          ' \
+            -f org="$SOURCE_ORG" \
+            -F number="$SOURCE_PROJECT_NUMBER")
+
+          if echo "$SOURCE_PROJECT" | jq -e '.data.organization.projectV2 == null' >/dev/null; then
+            echo "❌ Source project not found"
+            exit 1
           fi
-          
-          PROJECT_TITLE=$(echo "$SOURCE_PROJECT" | jq -r '.data.organization.projectV2.title')
+
+          PROJECT_TITLE=$(echo "$SOURCE_PROJECT" \
+            | jq -r '.data.organization.projectV2.title')
+
           echo "📋 Source project: $PROJECT_TITLE"
-          
-          # Get destination org ID
+
+          # ------------------------------------------------------------
+          # 2. Get destination project
+          # ------------------------------------------------------------
+
           DEST_ORG_ID=$(gh api graphql -f query='
             query($org: String!) {
               organization(login: $org) {
                 id
               }
             }
-          ' -f org="$DEST_ORG" --jq '.data.organization.id')
-          
-          if [ -z "$DEST_ORG_ID" ]; then
-            echo "❌ Failed to get destination org ID for $DEST_ORG"
-            exit 1
-          fi
-          
-          # Check if project already exists
+          ' -f org="$DEST_ORG" \
+            --jq '.data.organization.id')
+
+          echo "Destination organization ID: $DEST_ORG_ID"
+
           EXISTING_PROJECT=$(gh api graphql -f query='
             query($org: String!, $title: String!) {
               organization(login: $org) {
-                projectsV2(first: 5, query: $title) {
+                projectsV2(first: 20, query: $title) {
                   nodes {
                     id
                     number
+                    title
                     url
                   }
                 }
               }
             }
-          ' -f org="$DEST_ORG" -f title="Synced Aether Project")
-          
-          EXISTING_ID=$(echo "$EXISTING_PROJECT" | jq -r '.data.organization.projectsV2.nodes[0].id // empty')
-          EXISTING_URL=$(echo "$EXISTING_PROJECT" | jq -r '.data.organization.projectsV2.nodes[0].url // empty')
-          
-          if [ -n "$EXISTING_ID" ]; then
-            echo "✅ Project already exists: $EXISTING_URL"
-            DEST_PROJECT_ID="$EXISTING_ID"
-          else
-            echo "🆕 Creating new project..."
-            
-            NEW_PROJECT=$(gh api graphql -f query='
+          ' \
+            -f org="$DEST_ORG" \
+            -f title="Synced Aether Project")
+
+          DEST_PROJECT_ID=$(echo "$EXISTING_PROJECT" \
+            | jq -r '
+              .data.organization.projectsV2.nodes[]
+              | select(.title == "Synced Aether Project")
+              | .id
+            ' | head -n1)
+
+          if [ -z "$DEST_PROJECT_ID" ]; then
+
+            echo "🆕 Creating destination project..."
+
+            DEST_PROJECT=$(gh api graphql -f query='
               mutation($ownerId: ID!, $title: String!) {
                 createProjectV2(input: {
-                  ownerId: $ownerId,
+                  ownerId: $ownerId
                   title: $title
                 }) {
                   projectV2 {
                     id
                     number
+                    title
                     url
                   }
                 }
               }
-            ' -f ownerId="$DEST_ORG_ID" -f title="Synced Aether Project")
-            
-            DEST_PROJECT_ID=$(echo "$NEW_PROJECT" | jq -r '.data.createProjectV2.projectV2.id')
-            DEST_PROJECT_URL=$(echo "$NEW_PROJECT" | jq -r '.data.createProjectV2.projectV2.url')
-            
-            echo "✅ Project created: $DEST_PROJECT_URL"
+            ' \
+              -f ownerId="$DEST_ORG_ID" \
+              -f title="Synced Aether Project")
+
+            DEST_PROJECT_ID=$(echo "$DEST_PROJECT" \
+              | jq -r '.data.createProjectV2.projectV2.id')
+
+            echo "✅ Created project"
+
+          else
+            echo "✅ Destination project already exists"
           fi
-          
-          # Get existing items in destination to avoid duplicates
-          echo "🔍 Checking existing items in destination project..."
-          EXISTING_ITEMS=$(gh api graphql -f query='
-            query($projectId: ID!) {
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  items(first: 100) {
-                    nodes {
-                      content {
-                        ... on DraftIssue {
-                          title
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          ' -f projectId="$DEST_PROJECT_ID")
-          
-          # Create draft items for each source item
-          echo "📦 Creating draft items from source project..."
-          
-          ITEM_COUNT=$(echo "$SOURCE_PROJECT" | jq '.data.organization.projectV2.items.nodes | length')
-          echo "Found $ITEM_COUNT items to sync"
-          
-          SYNCED=0
-          echo "$SOURCE_PROJECT" | jq -c '.data.organization.projectV2.items.nodes[]' | while read -r item; do
-            ITEM_TYPE=$(echo "$item" | jq -r '.type')
-            
-            if [ "$ITEM_TYPE" = "DRAFT_ISSUE" ]; then
-              TITLE=$(echo "$item" | jq -r '.content.title')
-              BODY=$(echo "$item" | jq -r '.content.body // ""')
-            else
-              TITLE=$(echo "$item" | jq -r '.content.title // "Untitled"')
-              BODY=$(echo "$item" | jq -r '.content.body // ""')
-              URL=$(echo "$item" | jq -r '.content.url // ""')
-              REPO=$(echo "$item" | jq -r '.content.repository.nameWithOwner // ""')
-              NUMBER=$(echo "$item" | jq -r '.content.number // ""')
-              STATE=$(echo "$item" | jq -r '.content.state // ""')
-              
-              # Create enriched body with metadata
-              if [ -n "$URL" ]; then
-                ORIGINAL_BODY="$BODY"
-                BODY="**Source:** [$REPO#$NUMBER]($URL)"
-                BODY="$BODY
-          **State:** $STATE"
-                BODY="$BODY
-          
-          ---
-          
-          $ORIGINAL_BODY"
-              fi
-            fi
-            
-            # Check if item already exists
-            if echo "$EXISTING_ITEMS" | jq -e --arg title "$TITLE" '.data.node.items.nodes[] | select(.content.title == $title)' > /dev/null 2>&1; then
-              echo "⏭️  Skipping existing item: $TITLE"
+
+          # ------------------------------------------------------------
+          # 3. Load existing destination issues
+          # ------------------------------------------------------------
+
+          echo "🔍 Loading existing destination issues..."
+
+          EXISTING_ISSUES=$(gh api \
+            --paginate \
+            "repos/$DEST_REPO/issues?state=all&per_page=100" \
+            --jq '.[] | select(.pull_request == null) |
+              {
+                number: .number,
+                title: .title,
+                body: .body,
+                node_id: .node_id
+              }' \
+            | jq -s '.')
+
+          echo "Existing issues: $(echo "$EXISTING_ISSUES" | jq length)"
+
+          # ------------------------------------------------------------
+          # 4. Create/update destination issues
+          # ------------------------------------------------------------
+
+          declare -A ISSUE_MAP
+          declare -A PARENT_MAP
+
+          echo "📦 Synchronizing issues..."
+
+          echo "$SOURCE_PROJECT" \
+            | jq -c '.data.organization.projectV2.items.nodes[]' \
+            > /tmp/project-items.jsonl
+
+          while IFS= read -r ITEM; do
+
+            TYPE=$(echo "$ITEM" | jq -r '.type')
+
+            # We only synchronize real Issues.
+            if [ "$TYPE" != "ISSUE" ]; then
+              echo "⚠️ Skipping $TYPE item"
               continue
             fi
-            
-            # Create draft item
-            echo "➕ Adding: $TITLE"
+
+            TITLE=$(echo "$ITEM" | jq -r '.content.title')
+            BODY=$(echo "$ITEM" | jq -r '.content.body // ""')
+            URL=$(echo "$ITEM" | jq -r '.content.url')
+            SOURCE_ID=$(echo "$ITEM" | jq -r '.content.id')
+            STATE=$(echo "$ITEM" | jq -r '.content.state')
+
+            SOURCE_REPO=$(echo "$ITEM" \
+              | jq -r '.content.repository.nameWithOwner')
+
+            SOURCE_NUMBER=$(echo "$ITEM" \
+              | jq -r '.content.number')
+
+            echo ""
+            echo "➡️ $SOURCE_REPO#$SOURCE_NUMBER - $TITLE"
+
+            # Stable marker used to find the issue on future syncs.
+            MARKER="<!-- aether-sync-source: $URL -->"
+
+            # Get parent URL if any.
+            PARENT_URL=$(echo "$ITEM" \
+              | jq -r '.content.parent.url // empty')
+
+            # ----------------------------------------------------------
+            # Check whether issue already exists
+            # ----------------------------------------------------------
+
+            DEST_NUMBER=$(echo "$EXISTING_ISSUES" \
+              | jq -r --arg marker "$MARKER" '
+                .[]
+                | select((.body // "") | contains($marker))
+                | .number
+              ' | head -n1)
+
+            if [ -n "$DEST_NUMBER" ]; then
+
+              echo "♻️ Existing destination issue #$DEST_NUMBER"
+
+              ISSUE_MAP["$URL"]="$DEST_NUMBER"
+
+              # Update title/body.
+              NEW_BODY="$MARKER
+
+          **Source:** [$SOURCE_REPO#$SOURCE_NUMBER]($URL)
+
+          ---
+
+          $BODY"
+
+              gh issue edit "$DEST_NUMBER" \
+                --repo "$DEST_REPO" \
+                --title "$TITLE" \
+                --body "$NEW_BODY"
+
+            else
+
+              echo "🆕 Creating destination issue..."
+
+              NEW_BODY="$MARKER
+
+          **Source:** [$SOURCE_REPO#$SOURCE_NUMBER]($URL)
+
+          ---
+
+          $BODY"
+
+              DEST_NUMBER=$(gh issue create \
+                --repo "$DEST_REPO" \
+                --title "$TITLE" \
+                --body "$NEW_BODY" \
+                --json number \
+                --jq '.number')
+
+              echo "✅ Created #$DEST_NUMBER"
+
+              ISSUE_MAP["$URL"]="$DEST_NUMBER"
+            fi
+
+            # Save parent relation for second pass.
+            if [ -n "$PARENT_URL" ]; then
+              PARENT_MAP["$URL"]="$PARENT_URL"
+            fi
+
+            # Keep closed/open state.
+            if [ "$STATE" = "CLOSED" ]; then
+              gh issue close "$DEST_NUMBER" \
+                --repo "$DEST_REPO" || true
+            else
+              gh issue reopen "$DEST_NUMBER" \
+                --repo "$DEST_REPO" || true
+            fi
+
+          done < /tmp/project-items.jsonl
+
+          # ------------------------------------------------------------
+          # 5. Recreate parent/sub-issue hierarchy
+          # ------------------------------------------------------------
+
+          echo ""
+          echo "🌳 Rebuilding issue hierarchy..."
+
+          for CHILD_URL in "${!PARENT_MAP[@]}"; do
+
+            PARENT_URL="${PARENT_MAP[$CHILD_URL]}"
+
+            CHILD_NUMBER="${ISSUE_MAP[$CHILD_URL]:-}"
+            PARENT_NUMBER="${ISSUE_MAP[$PARENT_URL]:-}"
+
+            if [ -z "$CHILD_NUMBER" ]; then
+              echo "⚠️ Child not found: $CHILD_URL"
+              continue
+            fi
+
+            if [ -z "$PARENT_NUMBER" ]; then
+              echo "⚠️ Parent not found: $PARENT_URL"
+              continue
+            fi
+
+            echo "🔗 #$CHILD_NUMBER → parent #$PARENT_NUMBER"
+
+            gh issue edit "$CHILD_NUMBER" \
+              --repo "$DEST_REPO" \
+              --parent "$PARENT_NUMBER" || {
+                echo "⚠️ Failed to set parent"
+              }
+
+          done
+
+          # ------------------------------------------------------------
+          # 6. Add real issues to destination Project
+          # ------------------------------------------------------------
+
+          echo ""
+          echo "📋 Adding issues to destination Project..."
+
+          for SOURCE_URL in "${!ISSUE_MAP[@]}"; do
+
+            ISSUE_NUMBER="${ISSUE_MAP[$SOURCE_URL]}"
+
+            ISSUE_NODE_ID=$(gh api \
+              "repos/$DEST_REPO/issues/$ISSUE_NUMBER" \
+              --jq '.node_id')
+
+            echo "➕ Adding #$ISSUE_NUMBER"
+
             gh api graphql -f query='
-              mutation($projectId: ID!, $title: String!, $body: String!) {
-                addProjectV2DraftIssue(input: {
-                  projectId: $projectId,
-                  title: $title,
-                  body: $body
-                }) {
-                  projectItem {
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(
+                  input: {
+                    projectId: $projectId
+                    contentId: $contentId
+                  }
+                ) {
+                  item {
                     id
                   }
                 }
               }
-            ' -f projectId="$DEST_PROJECT_ID" -f title="$TITLE" -f body="$BODY" > /dev/null 2>&1 && SYNCED=$((SYNCED + 1)) || echo "⚠️  Failed to add: $TITLE"
-            
-            # Rate limiting
-            sleep 0.5
+            ' \
+              -f projectId="$DEST_PROJECT_ID" \
+              -f contentId="$ISSUE_NODE_ID" \
+              >/dev/null 2>&1 || \
+              echo "ℹ️ Already in project or could not add"
+
           done
-          
-          echo "✅ Synced $SYNCED new items"
-          echo "🎉 Project sync complete!"
+
+          # ------------------------------------------------------------
+          # 7. Link project to repository
+          # ------------------------------------------------------------
+
           echo ""
-          echo "📍 View project at: https://github.com/orgs/$DEST_ORG/projects"
-          
-          # Link project to destination repository
-          echo ""
-          echo "🔗 Linking project to repository..."
-          
-          # Get repository ID
+          echo "🔗 Linking project to destination repository..."
+
           REPO_ID=$(gh api graphql -f query='
             query($owner: String!, $name: String!) {
               repository(owner: $owner, name: $name) {
                 id
               }
             }
-          ' -f owner="$DEST_ORG" -f name="${DEST_REPO##*/}" --jq '.data.repository.id')
-          
+          ' \
+            -f owner="$DEST_ORG" \
+            -f name="$DEST_REPO_NAME" \
+            --jq '.data.repository.id')
+
           if [ -n "$REPO_ID" ]; then
-            # Link the project to the repository
+
             gh api graphql -f query='
               mutation($projectId: ID!, $repositoryId: ID!) {
-                linkProjectV2ToRepository(input: {
-                  projectId: $projectId,
-                  repositoryId: $repositoryId
-                }) {
+                linkProjectV2ToRepository(
+                  input: {
+                    projectId: $projectId
+                    repositoryId: $repositoryId
+                  }
+                ) {
                   repository {
                     id
                   }
                 }
               }
-            ' -f projectId="$DEST_PROJECT_ID" -f repositoryId="$REPO_ID" > /dev/null 2>&1 && \
-              echo "✅ Project linked to repository: https://github.com/$DEST_REPO/projects" || \
-              echo "⚠️  Failed to link project to repository (it may already be linked)"
-          else
-            echo "⚠️  Could not get repository ID for $DEST_REPO"
+            ' \
+              -f projectId="$DEST_PROJECT_ID" \
+              -f repositoryId="$REPO_ID" \
+              >/dev/null 2>&1 || true
+
+            echo "✅ Project linked"
+
           fi
+
+          echo ""
+          echo "======================================"
+          echo " ✅ GitHub Project sync complete"
+          echo "======================================"
 
       - name: Create summary
         if: always()
