@@ -540,6 +540,47 @@ jobs:
 
           echo "Destination: $DEST_PROJECT_URL"
 
+          # Remove all destination project items
+          echo "Clearing destination project..."
+          
+          while IFS= read -r ITEM_ID; do
+            [ -n "$ITEM_ID" ] || continue
+          
+            gh api graphql -f query='
+              mutation($projectId: ID!, $itemId: ID!) {
+                deleteProjectV2Item(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                  }
+                ) {
+                  deletedItemId
+                }
+              }
+            ' \
+              -f projectId="$DEST_PROJECT_ID" \
+              -f itemId="$ITEM_ID" \
+              >/dev/null
+          done < <(
+            gh api graphql -f query='
+              query($projectId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 100) {
+                      nodes {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            ' \
+              -f projectId="$DEST_PROJECT_ID" \
+              --jq '.data.node.items.nodes[].id'
+          )
+          
+          echo "Destination project cleared"
+
           # 3. Synchronize project description
           gh api graphql -f query='
             mutation($projectId: ID!, $shortDescription: String!) {
