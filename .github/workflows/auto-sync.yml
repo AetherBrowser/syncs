@@ -697,7 +697,10 @@ jobs:
               jq -c '.data.organization.projectV2.items.nodes[]'
           )
 
-          # 6. Restore parent/sub-issue relationships
+          # 6. Restore parent/sub-issue relationships (GraphQL — gh issue edit has no --parent flag)
+          DEBUG_LOG="${GITHUB_WORKSPACE}/.cursor/debug-066c9f.log"
+          mkdir -p "$(dirname "$DEBUG_LOG")"
+
           for CHILD_URL in "${!PARENT_MAP[@]}"; do
             PARENT_URL="${PARENT_MAP[$CHILD_URL]}"
             CHILD_NUMBER="${ISSUE_MAP[$CHILD_URL]:-}"
@@ -706,9 +709,43 @@ jobs:
             [ -n "$CHILD_NUMBER" ] || continue
             [ -n "$PARENT_NUMBER" ] || continue
 
-            gh issue edit "$CHILD_NUMBER" \
-              --repo "$DEST_REPO" \
-              --parent "$PARENT_NUMBER" >/dev/null
+            PARENT_NODE_ID=$(gh api \
+              "repos/$DEST_REPO/issues/$PARENT_NUMBER" \
+              --jq '.node_id')
+
+            CHILD_NODE_ID=$(gh api \
+              "repos/$DEST_REPO/issues/$CHILD_NUMBER" \
+              --jq '.node_id')
+
+            # #region agent log
+            printf '%s\n' \
+              "{\"sessionId\":\"066c9f\",\"runId\":\"pre-fix\",\"hypothesisId\":\"H1\",\"location\":\"auto-sync.yml:restore-parent\",\"message\":\"addSubIssue attempt\",\"data\":{\"parentNumber\":$PARENT_NUMBER,\"childNumber\":$CHILD_NUMBER,\"parentNodeId\":\"$PARENT_NODE_ID\",\"childNodeId\":\"$CHILD_NODE_ID\"},\"timestamp\":$(($(date +%s)*1000))}" \
+              >> "$DEBUG_LOG" 2>/dev/null || true
+            # #endregion
+
+            if ! gh api graphql -f query='
+              mutation($issueId: ID!, $subIssueId: ID!) {
+                addSubIssue(input: {
+                  issueId: $issueId
+                  subIssueId: $subIssueId
+                  replaceParent: true
+                }) {
+                  issue { id }
+                  subIssue { id }
+                }
+              }
+            ' \
+              -f issueId="$PARENT_NODE_ID" \
+              -f subIssueId="$CHILD_NODE_ID" \
+              >/dev/null 2>&1; then
+              echo "Warning: failed to link issue #$CHILD_NUMBER to parent #$PARENT_NUMBER" >&2
+
+              # #region agent log
+              printf '%s\n' \
+                "{\"sessionId\":\"066c9f\",\"runId\":\"pre-fix\",\"hypothesisId\":\"H1\",\"location\":\"auto-sync.yml:restore-parent\",\"message\":\"addSubIssue failed\",\"data\":{\"parentNumber\":$PARENT_NUMBER,\"childNumber\":$CHILD_NUMBER},\"timestamp\":$(($(date +%s)*1000))}" \
+                >> "$DEBUG_LOG" 2>/dev/null || true
+              # #endregion
+            fi
           done
 
           # 7. Add issues to destination project
