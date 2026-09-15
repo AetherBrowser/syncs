@@ -42,7 +42,10 @@ jobs:
           fi
 
   sync-repos:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
+    defaults:
+      run:
+        shell: bash
 
     needs: check-should-sync
 
