@@ -10,7 +10,7 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/auto-sync.yml'
+      - '.github/workflows/sync-epitech.yml'
 
 env:
   GITHUB_ORG: "AetherBrowser"
