@@ -21,7 +21,6 @@ jobs:
             ["aether"]="Aether"
             ["book"]="Book"
             ["project"]="Project"
-            [".github"]=".github"
             ["EpitechReference"]="EpitechReference"
             ["EpitechAetherDocs"]="EpitechAetherDocs"
           )
