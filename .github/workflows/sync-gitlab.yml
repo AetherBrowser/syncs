@@ -19,6 +19,11 @@ jobs:
         run: |
           declare -A REPOS=(
             ["aether"]="Aether"
+            ["book"]="Book"
+            ["project"]="Project"
+            [".github"]=".github"
+            ["EpitechReference"]="EpitechReference"
+            ["EpitechAetherDocs"]="EpitechAetherDocs"
           )
 
           GITLAB_GROUP="aetherbrowser"
