@@ -336,6 +336,8 @@ jobs:
       # ================================================================
 
       - name: Clone GitHub Project
+        # Step disabled, code available as legacy sync
+        if: false
         env:
           GH_TOKEN: ${{ secrets.EPITECH_SYNC_TOKEN }}
           SOURCE_ORG: "AetherBrowser"
